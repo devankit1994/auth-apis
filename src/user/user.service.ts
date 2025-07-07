@@ -2,18 +2,24 @@ import {
   Injectable,
   ConflictException,
   InternalServerErrorException,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from './schema/user.schema';
-import { UserDTO } from './dto/user.dto';
 import * as bcrypt from 'bcrypt';
+import { LoginDTO, SignupDTO } from './dto/user.dto';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class UserService {
-  constructor(@InjectModel(User.name) private _userModel: Model<User>) {}
+  constructor(
+    @InjectModel(User.name) private _userModel: Model<User>,
+    private _jwtService: JwtService,
+  ) {}
 
-  async signup(user: UserDTO) {
+  async signup(user: SignupDTO) {
     const { name, email } = user;
 
     // Check if user already exists
@@ -40,5 +46,27 @@ export class UserService {
       console.error(e);
       throw new InternalServerErrorException('Signup Failed', e);
     }
+  }
+
+  async login(loginCredentials: LoginDTO) {
+    // Find User in DB
+    const user = await this._userModel.findOne({
+      email: loginCredentials.email,
+    });
+    if (!user) {
+      throw new NotFoundException("You don't have a account!");
+    }
+
+    // Match password
+    const doesPasswordMatch = await bcrypt.compare(
+      loginCredentials.password,
+      user.password,
+    );
+
+    if (!doesPasswordMatch) {
+      throw new UnauthorizedException('Invalid credentials!');
+    }
+
+    return { token: this._jwtService.sign({ email: loginCredentials.email }) };
   }
 }
